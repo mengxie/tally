@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: tally
+          POSTGRES_PASSWORD: tally
+          POSTGRES_DB: tally_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tally -d tally_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # With a database available, the repository contract also runs against real PostgreSQL.
+      DATABASE_URL: postgres://tally:tally@localhost:5432/tally_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  container:
+    name: Container smoke test
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack and wait until healthy
+        run: docker compose up --detach --build --wait
+      - name: The API is ready and serves the web app
+        run: |
+          curl --fail --silent http://localhost:3000/api/health
+          curl --fail --silent http://localhost:3000/ | grep -q '<title>Tally</title>'
+          curl --fail --silent --output /dev/null http://localhost:3000/groups/any-deep-link
+      - name: Show logs
+        if: always()
+        run: docker compose logs app
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
