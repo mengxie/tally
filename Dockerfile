@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build both apps
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -14,7 +14,7 @@ COPY apps apps
 RUN npm run build
 
 # ---- Production dependencies of the API only (no React, no build tools)
-FROM node:22-alpine AS prod-deps
+FROM node:25-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -23,7 +23,7 @@ COPY apps/web/package.json apps/web/
 RUN npm ci --omit=dev --workspace=@tally/api
 
 # ---- Runtime: one process serves the API and the web app from the same origin
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 COPY --from=prod-deps /app/node_modules ./node_modules
